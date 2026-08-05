@@ -42,9 +42,20 @@ if errorlevel 1 goto :nonode
 for /f "delims=" %%v in ('node -v') do echo Node %%v
 
 rem --- first run: create .env -------------------------------
+rem  The copy used to be unchecked: when .env.example was missing it
+rem  failed silently but still printed "Created", then the server
+rem  started with no config and every quote request failed.
 if not exist "%ROOT%\server\.env" (
-    copy /y "%ROOT%\.env.example" "%ROOT%\server\.env" >nul
-    echo Created server\.env  - starting in DEMO mode, no API key needed.
+    if exist "%ROOT%\.env.example" (
+        copy /y "%ROOT%\.env.example" "%ROOT%\server\.env" >nul
+        echo Created server\.env from .env.example - DEMO mode, no API key needed.
+    ) else (
+        echo WARNING: .env.example not found. Writing a minimal server\.env.
+        >  "%ROOT%\server\.env" echo DEMO=true
+        >> "%ROOT%\server\.env" echo KIWOOM_MOCK=true
+        >> "%ROOT%\server\.env" echo PORT=4000
+        >> "%ROOT%\server\.env" echo US_PROVIDER=demo
+    )
 )
 
 rem --- install dependencies ---------------------------------

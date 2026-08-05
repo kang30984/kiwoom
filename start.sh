@@ -12,8 +12,15 @@ fi
 echo "Node $(node -v)"
 
 if [ ! -f server/.env ]; then
-  cp .env.example server/.env
-  echo "server/.env 를 만들었습니다. 처음이라 데모 모드(가짜 시세)로 시작합니다."
+  if [ -f .env.example ]; then
+    cp .env.example server/.env
+    echo "server/.env 를 만들었습니다. 처음이라 데모 모드(가짜 시세)로 시작합니다."
+  else
+    # .env.example 이 없어도 최소 설정으로 진행합니다.
+    # 예전에는 여기서 cp 가 실패하고 set -e 때문에 스크립트가 통째로 멈췄습니다.
+    echo "경고: .env.example 이 없어 기본 설정으로 server/.env 를 만듭니다."
+    printf 'DEMO=true\nKIWOOM_MOCK=true\nPORT=4000\nUS_PROVIDER=demo\n' > server/.env
+  fi
 fi
 
 if [ ! -d server/node_modules ]; then

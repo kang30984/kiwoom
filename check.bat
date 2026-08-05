@@ -32,6 +32,22 @@ if exist "server\src\routes\plan.js" (echo     OK   server\src\routes\plan.js) e
 if exist "web\src\components\TradePlan.jsx" (echo     OK   web\src\components\TradePlan.jsx) else (echo     MISSING  web\src\components\TradePlan.jsx)
 echo.
 
+echo [2b] Config files present?
+if exist ".env.example" (echo     OK   .env.example) else (echo     MISSING  .env.example  ^<-- start.bat cannot create server\.env)
+if exist ".gitignore" (echo     OK   .gitignore) else (echo     MISSING  .gitignore  ^<-- server\.env would be committed!)
+if exist "server\.env" (echo     OK   server\.env) else (echo     MISSING  server\.env  ^<-- run start.bat once to create it)
+echo.
+
+echo [2c] Is server\.env ignored by git?
+git check-ignore -q "server\.env" 2>nul
+if errorlevel 1 (
+    echo     PROBLEM - server\.env is NOT ignored. Your API keys can be committed.
+    echo               Add a .gitignore containing:  server/.env
+) else (
+    echo     OK - server\.env is ignored
+)
+echo.
+
 echo [3] Price-limit fix inside demoFeed.js?
 findstr /m /C:"priceLimits" "server\src\demoFeed.js" >nul 2>nul
 if errorlevel 1 (
