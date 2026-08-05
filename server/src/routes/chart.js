@@ -129,7 +129,15 @@ chartRouter.get('/chart/:code', async (req, res, next) => {
   try {
     const code = normalizeCode(req.params.code);
     const requested = String(req.query.type ?? 'day');
-    const type = Object.keys(CHART_TR).includes(requested) ? requested : 'day';
+    // 모르는 타입을 조용히 day 로 바꾸면, 봉 종류를 추가하다 CHART_TR 등록을
+    // 빠뜨렸을 때 '년봉' 탭에 일봉이 그려지는 것을 알아챌 수 없습니다.
+    if (!Object.keys(CHART_TR).includes(requested)) {
+      return res.status(400).json({
+        error: `알 수 없는 차트 종류 '${requested}'`,
+        detail: `사용 가능: ${Object.keys(CHART_TR).join(', ')}`,
+      });
+    }
+    const type = requested;
     // 기본 조회 기간. ?years=5 로 덮어쓸 수 있습니다.
     const years = Number(req.query.years) > 0
       ? Number(req.query.years)

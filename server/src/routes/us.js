@@ -48,7 +48,14 @@ usRouter.get('/us/chart/:symbol', async (req, res, next) => {
   try {
     const symbol = normalizeSymbol(req.params.symbol);
     const requested = String(req.query.type ?? 'day');
-    const type = ['day', 'week', 'month'].includes(requested) ? requested : 'day';
+    const allowed = ['day', 'week', 'month'];
+    if (!allowed.includes(requested)) {
+      return res.status(400).json({
+        error: `알 수 없는 차트 종류 '${requested}'`,
+        detail: `사용 가능: ${allowed.join(', ')} (미국 탭은 무료 티어 제약으로 분봉이 없습니다)`,
+      });
+    }
+    const type = requested;
 
     const years = Number(req.query.years) > 0 ? Number(req.query.years) : YEARS[type];
     const from = yearsAgo(years);
