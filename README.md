@@ -14,7 +14,6 @@ API 키는 서버에만 두고 브라우저는 이 서버만 바라봅니다. �
 
 ```bash
 git clone <https://github.com/kang30984/kiwoom>
-cd kiwoom-terminal
 cp .env.example server/.env
 
 cd server \&\& npm install \&\& npm start   # 터미널 1
