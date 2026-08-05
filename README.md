@@ -1,2 +1,2 @@
 # kiwoom
-kiwoom chart
+kiwoom chart program
