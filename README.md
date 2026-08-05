@@ -13,7 +13,7 @@ API 키는 서버에만 두고 브라우저는 이 서버만 바라봅니다. �
 **API 키 없이 돌아갑니다.** 처음 실행하면 가짜 시세(데모 모드)로 시작하므로 계좌나 키 발급 없이 전체 기능을 확인할 수 있습니다.
 
 ```bash
-git clone <https://github.com/kang30984/kiwoom.git>
+git clone https://github.com/kang30984/kiwoom.git
 cp .env.example server/.env
 
 cd server \&\& npm install \&\& npm start   # 터미널 1
