@@ -8,13 +8,33 @@ export const APP_VERSION = '30-held-risk';
 
 const MOCK = String(process.env.KIWOOM_MOCK ?? 'true') === 'true';
 
+const APP_KEY = process.env.KIWOOM_APP_KEY ?? '';
+const SECRET_KEY = process.env.KIWOOM_SECRET_KEY ?? '';
+const HAS_KEYS = Boolean(APP_KEY && SECRET_KEY);
+
+/**
+ * 데모 모드 판정.
+ *
+ * DEMO 를 명시하면 그 값을 그대로 씁니다. 지정하지 않았으면 앱키 유무로
+ * 판단합니다 — 키가 없으면 데모로 시작합니다.
+ *
+ * 예전에는 기본값이 false 여서, .env 없이 처음 실행하면 빈 앱키로 키움에
+ * 접속을 시도하다 토큰 발급에 실패하고 화면이 비어 있었습니다.
+ * 반대로 무조건 true 로 두면 키를 넣어 둔 기존 사용자가 갑자기 가짜 시세를
+ * 보게 되므로, 키가 있으면 실제 모드를 유지합니다.
+ */
+const DEMO = process.env.DEMO !== undefined
+  ? String(process.env.DEMO) === 'true'
+  : !HAS_KEYS;
+
 export const config = {
   port: Number(process.env.PORT ?? 4000),
-  appKey: process.env.KIWOOM_APP_KEY ?? '',
-  secretKey: process.env.KIWOOM_SECRET_KEY ?? '',
+  appKey: APP_KEY,
+  secretKey: SECRET_KEY,
   mock: MOCK,
+  hasKeys: HAS_KEYS,
   // DEMO=true 면 키움에 접속하지 않고 가짜 시세로 화면만 확인합니다.
-  demo: String(process.env.DEMO ?? 'false') === 'true',
+  demo: DEMO,
   restBase: MOCK ? 'https://mockapi.kiwoom.com' : 'https://api.kiwoom.com',
   wsUrl: MOCK
     ? 'wss://mockapi.kiwoom.com:10000/api/dostk/websocket'

@@ -20,7 +20,9 @@ app.get('/api/health', (_req, res) => {
     version: APP_VERSION,
     demo: config.demo,
     mode: config.demo ? 'demo' : config.mock ? 'mock' : 'real',
-    keyLoaded: config.demo || Boolean(config.appKey),
+    // 데모 모드에서도 실제 키 유무를 그대로 보고합니다.
+    // 예전에는 demo 면 무조건 true 라서 키가 없는데 있는 것처럼 보였습니다.
+    keyLoaded: config.hasKeys,
   });
 });
 
@@ -39,6 +41,17 @@ attachRealtime(server);
 server.listen(config.port, () => {
   const label = config.demo ? '데모 — 가짜 시세' : config.mock ? '모의투자' : '실전';
   console.log(`서버 실행 http://localhost:${config.port}  (${label})  ver ${APP_VERSION}`);
-  if (config.demo) console.log('   실제 시세를 보려면 server/.env 에서 DEMO=false 로 바꾸고 앱키를 넣으세요.');
-  else if (!config.appKey) console.warn('⚠  .env 에 KIWOOM_APP_KEY / KIWOOM_SECRET_KEY 를 넣어주세요.');
+
+  if (config.demo) {
+    if (!config.hasKeys) {
+      console.log('   앱키가 없어 데모 모드로 시작했습니다. 화면의 숫자는 실제 시세가 아닙니다.');
+      console.log('   실제 시세: server/.env 에 KIWOOM_APP_KEY / KIWOOM_SECRET_KEY 를 넣고 DEMO=false 로 바꾸세요.');
+    } else {
+      console.log('   DEMO=true 이므로 앱키가 있어도 가짜 시세를 씁니다. 실제 시세는 DEMO=false 로 바꾸세요.');
+    }
+  } else if (!config.hasKeys) {
+    // 여기까지 오면 사용자가 DEMO=false 를 직접 지정했는데 키가 없는 상태입니다.
+    console.warn('⚠  DEMO=false 인데 앱키가 없습니다. 시세 조회가 모두 실패합니다.');
+    console.warn('   server/.env 에 KIWOOM_APP_KEY / KIWOOM_SECRET_KEY 를 넣거나, DEMO=true 로 바꾸세요.');
+  }
 });
