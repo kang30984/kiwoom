@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { TR } from '../config.js';
 import { callTr, num, firstArray, normalizeCode } from '../kiwoomRest.js';
 import { config } from '../config.js';
+import { krGate, KR_TTL } from '../cache.js';
 import { demoRank } from '../demoFeed.js';
 
 export const rankRouter = Router();
@@ -43,17 +44,21 @@ rankRouter.get('/rank/:kind', async (req, res, next) => {
           stex_tp: '3',
         };
 
-    const { data } = await callTr(tr, body);
+    // 순위는 모든 사용자가 같은 값을 봅니다. 30초 캐시로 키움 호출을 아낍니다
+    // (README 의 '다음으로 붙일 만한 것' 항목 — Redis 없이 인메모리로 충분).
+    const items = await krGate.run(`rank:${kind}:${market}`, KR_TTL.rank, async () => {
+      const { data } = await callTr(tr, body);
 
-    const items = firstArray(data).slice(0, 30).map((r, i) => ({
-      rank: i + 1,
-      code: normalizeCode(r.stk_cd),
-      name: r.stk_nm ?? '',
-      price: Math.abs(num(r.cur_prc) ?? 0),
-      change: num(r.pred_pre) ?? 0,
-      changeRate: num(r.flu_rt) ?? 0,
-      volume: Math.abs(num(r.trde_qty) ?? 0),
-    })).filter((x) => x.code);
+      return firstArray(data).slice(0, 30).map((r, i) => ({
+        rank: i + 1,
+        code: normalizeCode(r.stk_cd),
+        name: r.stk_nm ?? '',
+        price: Math.abs(num(r.cur_prc) ?? 0),
+        change: num(r.pred_pre) ?? 0,
+        changeRate: num(r.flu_rt) ?? 0,
+        volume: Math.abs(num(r.trde_qty) ?? 0),
+      })).filter((x) => x.code);
+    });
 
     res.json({ kind, market, items });
   } catch (err) { next(err); }

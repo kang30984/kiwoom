@@ -36,6 +36,13 @@ export const api = {
   chart: (code, type, tick, market) =>
     get(`${base(market)}/chart/${code}?type=${type}${type === 'minute' ? `&tick=${tick}` : ''}`),
   rank: (kind) => get(`/api/rank/${kind}`),             // 국내만
+  /* 체결강도·프로그램매매는 키움 국내 TR 만 있습니다 (markets.js 의 hasFlow).
+     폴링으로 부르므로 짧게 끊습니다 — 실패하면 다음 주기에 다시 시도합니다. */
+  strength: (code, period = 'time') =>
+    get(`/api/strength/${code}?period=${period}`, { timeout: 12_000 }),
+  program: (code) => get(`/api/program/${code}`, { timeout: 12_000 }),
+  programMarket: (market = '001') =>
+    get(`/api/program-market?market=${market}`, { timeout: 12_000 }),
   search: (q, market) => get(`${base(market)}/search?q=${encodeURIComponent(q)}`),
   plan: (code, params, market) => {
     const q = new URLSearchParams();
@@ -188,3 +195,78 @@ export const fmtVol = (n, market) => {
   if (n >= 1e3) return `${Math.round(n / 1e3).toLocaleString('en-US')}K`;
   return n.toLocaleString('en-US');
 };
+
+/* ── 수급(체결강도 · 프로그램매매) 표시 ─────────────────── */
+
+/**
+ * 체결강도.
+ *
+ * 색을 쓰지 않습니다. 이 화면의 규칙은 "색은 등락 방향에만" 이고,
+ * 체결강도를 빨강/파랑으로 칠하면 그 규칙이 깨지는 동시에
+ * 방향 신호가 됩니다 — 체결강도 120% 가 상승을 의미한다는 근거는 없습니다.
+ * 누적 비율이라 후행하는 지표입니다.
+ */
+export const fmtStrength = (n) =>
+  (n === null || n === undefined ? '—' : `${n.toFixed(n < 1000 ? 1 : 0)}%`);
+
+/**
+ * 순매수 수량·금액.
+ *
+ * 부호가 의미의 전부라 반드시 살립니다. 방향을 색이 아니라
+ * '순매수' / '순매도' 라는 말로 표시합니다.
+ */
+export const netLabel = (n) => {
+  if (n === null || n === undefined) return '—';
+  if (n === 0) return '보합';
+  return n > 0 ? '순매수' : '순매도';
+};
+
+/** 순매수 금액 — 부호 유지 + 만/억 축약 */
+export const fmtNetMoney = (n) => {
+  if (n === null || n === undefined) return '—';
+  const sign = n > 0 ? '+' : n < 0 ? '−' : '';
+  return `${sign}${fmtShort(Math.abs(n), 'KR')}원`;
+};
+
+/** 순매수 수량 — 부호 유지 + 만/억 축약 */
+export const fmtNetQty = (n) => {
+  if (n === null || n === undefined) return '—';
+  const sign = n > 0 ? '+' : n < 0 ? '−' : '';
+  return `${sign}${fmtVolume(Math.abs(n))}주`;
+};
+
+/**
+ * 방향이 없는 수량 (매수량·매도량·거래량).
+ *
+ * fmtNetQty 를 쓰면 '+547만주' 처럼 부호가 붙습니다. 순매수는 부호가
+ * 의미의 전부지만, 매수·매도 각각은 항상 양수라서 부호를 붙이면
+ * 순매수와 같은 종류의 값으로 오해합니다.
+ */
+export const fmtAbsQty = (n) => (n === null || n === undefined
+  ? '—'
+  : `${fmtVolume(Math.abs(n))}주`);
+
+export const exactAbsQty = (n) => (n === null || n === undefined
+  ? ''
+  : `${Math.abs(Math.round(n)).toLocaleString('ko-KR')}주`);
+
+/**
+ * 축약 표시 옆에 붙일 정확한 값.
+ *
+ * fmtNetQty 는 45,454 를 '5만주' 로 줄입니다 — 10% 오차입니다.
+ * 이 저장소의 규칙("줄인 표시에 마우스를 올리면 정확한 값이 title 로")을
+ * 수급 숫자에도 적용합니다. 수급은 규모를 비교하는 값이라 축약이 맞지만,
+ * 정확한 값을 잃으면 안 됩니다.
+ */
+export const exactNetQty = (n) => (n === null || n === undefined
+  ? ''
+  : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(Math.round(n)).toLocaleString('ko-KR')}주`);
+
+export const exactNetMoney = (n) => (n === null || n === undefined
+  ? ''
+  : `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(Math.round(n)).toLocaleString('ko-KR')}원`);
+
+/** amountUnit(원) → 사람이 읽는 이름. 화면에 가정한 단위를 밝히는 용도입니다. */
+export const unitLabel = (unit) => (
+  { 1: '원', 1000: '천원', 1000000: '백만원' }[unit] ?? `${unit.toLocaleString('ko-KR')}원`
+);

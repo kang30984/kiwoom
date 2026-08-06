@@ -7,8 +7,21 @@ import { PriceChart } from './components/PriceChart.jsx';
 import { RankTable } from './components/RankTable.jsx';
 import { TradePlan } from './components/TradePlan.jsx';
 import { StockSearch } from './components/StockSearch.jsx';
+import { FlowPanel } from './components/FlowPanel.jsx';
 
 const MARKET_KEY = 'market.v1';
+
+/**
+ * 우측 패널 탭. 시장별로 갖는 기능이 다릅니다 (서버 markets.js 의 hasOrderbook /
+ * hasFlow 와 같은 구분). isUs 를 렌더 안에 흩뿌리는 대신 여기 한곳에 두면,
+ * 기능을 추가할 때 조건 분기가 App 곳곳으로 번지지 않습니다.
+ *   - 호가: 미국 무료 API 는 depth 를 주지 않습니다
+ *   - 수급: 체결강도·프로그램매매는 키움 국내 TR 만 있습니다
+ */
+const RIGHT_TABS = {
+  KR: [['book', '호가'], ['flow', '수급'], ['plan', '매매계획']],
+  US: [['plan', '매매계획']],
+};
 const STORE_KEY = { KR: 'watchlist.v1', US: 'watchlist.us.v1' };
 
 const DEFAULTS = {
@@ -78,6 +91,7 @@ export default function App() {
   const [usProvider, setUsProvider] = useState(null);
 
   const isUs = market === 'US';
+  const tabs = RIGHT_TABS[market] ?? RIGHT_TABS.KR;
 
   const codes = useMemo(() => watchlist.map((w) => w.code), [watchlist]);
   // 실시간 WebSocket 은 키움 국내주식만 제공합니다.
@@ -100,7 +114,8 @@ export default function App() {
     setWatchlist(list);
     setSelected(list[0]?.code ?? '');
     setSnapshot(null);
-    setRightTab(next === 'US' ? 'plan' : 'book');
+    // 시장에 없는 탭이 선택된 상태로 남으면 패널이 빈 채로 보입니다.
+    setRightTab((RIGHT_TABS[next] ?? RIGHT_TABS.KR)[0][0]);
   }, [market]);
 
   /* 앱 시작 시 키 설정 여부 확인 */
@@ -246,6 +261,9 @@ export default function App() {
     open: pick(live?.open, snapshot?.open),
     high: pick(live?.high, snapshot?.high),
     low: pick(live?.low, snapshot?.low),
+    // 체결강도도 같은 우선순위를 따릅니다: 실시간 > 스냅샷.
+    // 관심종목에는 담지 않으므로 대안이 두 개뿐입니다.
+    strength: pick(live?.strength, snapshot?.strength),
   };
   const prevClose = view.price !== null && view.change !== null ? view.price - view.change : null;
   const tone = dirClass(view.changeRate ?? 0);
@@ -387,24 +405,35 @@ export default function App() {
       </main>
 
       <aside className="pane pane--book">
-        {isUs ? (
-          <>
-            <div className="eyebrow"><span>매매계획</span></div>
-            <TradePlan code={selected} price={view.price} market={market} />
-          </>
-        ) : (
-          <>
-            <div className="eyebrow">
-              <div className="tabs">
-                <button type="button" aria-pressed={rightTab === 'book'} onClick={() => setRightTab('book')}>호가</button>
-                <button type="button" aria-pressed={rightTab === 'plan'} onClick={() => setRightTab('plan')}>매매계획</button>
-              </div>
+        <div className="eyebrow">
+          {tabs.length > 1 ? (
+            <div className="tabs">
+              {tabs.map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={rightTab === id}
+                  onClick={() => setRightTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
+          ) : (
+            <span>{tabs[0]?.[1]}</span>
+          )}
+        </div>
 
-            {rightTab === 'book'
-              ? <OrderBook book={books[selected]} price={view.price} prevClose={prevClose} hideHeader />
-              : <TradePlan code={selected} price={view.price} market={market} />}
-          </>
+        {rightTab === 'book' && (
+          <OrderBook book={books[selected]} price={view.price} prevClose={prevClose} hideHeader />
+        )}
+        {rightTab === 'flow' && (
+          /* 실시간 체결강도를 넘겨줍니다. REST 스냅샷은 패널이 직접 받고,
+             실시간이 있으면 그 값이 이깁니다. */
+          <FlowPanel code={selected} liveStrength={live?.strength ?? null} />
+        )}
+        {rightTab === 'plan' && (
+          <TradePlan code={selected} price={view.price} market={market} />
         )}
       </aside>
 

@@ -28,6 +28,9 @@ quoteRouter.get('/quote/:code', async (req, res, next) => {
       lowerLimit: Math.abs(num(data.lst_pric) ?? 0),
       marketCap: num(data.mac),
       per: num(data.per),
+      // 체결강도. 필드명이 다르면 null 이 오고 화면에 '—' 가 뜹니다.
+      // 실시간(0B)이 곧 덮어쓰므로 여기 값은 초기 표시용입니다.
+      strength: Math.abs(num(data.cntr_str) ?? 0) || null,
       raw: process.env.NODE_ENV === 'development' ? data : undefined,
     });
   } catch (err) { next(err); }

@@ -23,6 +23,10 @@ export const KR = {
   priceLimits: krPriceLimits,
   hasPriceLimit: true,
   hasOrderbook: true,
+  // 체결강도·프로그램매매는 키움 국내 TR 만 있습니다.
+  // isUs 를 화면에 하드코딩하는 대신 여기에 모아 두면, 기능이 늘어날 때
+  // 조건 분기가 App.jsx 곳곳으로 번지지 않습니다.
+  hasFlow: true,
   costs: DEFAULT_COSTS,
   /** 상승 색. 한국은 빨강, 미국은 초록입니다. */
   upColor: 'red',
@@ -56,6 +60,8 @@ export const US = {
   hasPriceLimit: false,
   // 무료 시세 API는 호가(depth)를 주지 않습니다.
   hasOrderbook: false,
+  // 프로그램매매는 KRX 공시 개념이고, 체결강도도 무료 API 가 주지 않습니다.
+  hasFlow: false,
   // 대부분의 미국 브로커가 수수료 0입니다. 양도소득세는 연말 정산 대상이라
   // 건별 손익분기에 넣지 않습니다 (README 참고).
   costs: { buyFeePct: 0, sellFeePct: 0, sellTaxPct: 0 },

@@ -7,6 +7,7 @@ import { chartRouter } from './routes/chart.js';
 import { rankRouter } from './routes/rank.js';
 import { planRouter } from './routes/plan.js';
 import { searchRouter } from './routes/search.js';
+import { flowRouter } from './routes/flow.js';
 import { usRouter } from './routes/us.js';
 import { attachRealtime } from './realtime.js';
 
@@ -26,7 +27,7 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.use('/api', quoteRouter, chartRouter, rankRouter, planRouter, searchRouter, usRouter);
+app.use('/api', quoteRouter, chartRouter, rankRouter, planRouter, searchRouter, flowRouter, usRouter);
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, _req, res, _next) => {

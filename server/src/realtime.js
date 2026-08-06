@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { config, RT_TYPE } from './config.js';
+import { config, RT_TYPE, FID_OVERRIDE } from './config.js';
 import { getToken } from './kiwoomAuth.js';
 import { startDemoFeed } from './demoFeed.js';
 
@@ -16,6 +16,12 @@ const FID = {
   open: '16',
   high: '17',
   low: '18',
+  /**
+   * 체결강도. ⚠ 이 번호는 검증되지 않았습니다 — 0B 주식체결의 FID 표와
+   * 대조하세요. 틀리면 값이 null 로만 오고(에러가 아님) 화면에 '—' 가 뜹니다.
+   * 코드를 고치지 않고 server/.env 의 FID_STRENGTH 로 덮어쓸 수 있습니다.
+   */
+  strength: FID_OVERRIDE.strength,
 };
 
 const toNum = (v) => {
@@ -143,6 +149,11 @@ export function attachRealtime(httpServer) {
             open: toAbs(values[FID.open]),
             high: toAbs(values[FID.high]),
             low: toAbs(values[FID.low]),
+            // 체결강도는 키움이 주는 값을 그대로 흘려보냅니다. 직접 누적하면
+            // 브라우저가 장중에 접속했을 때 '접속 시점부터의 누계'가 되어
+            // 전혀 다른 숫자가 되고, 종목별 accumulator·장시작 리셋·재연결
+            // 초기화가 따라붙어 이 파일의 무상태 fanout 설계가 깨집니다.
+            strength: toAbs(values[FID.strength]),
             time: values[FID.time] ?? null,
           });
         } else if (item.type === RT_TYPE.ORDERBOOK) {

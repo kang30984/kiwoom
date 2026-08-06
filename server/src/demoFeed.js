@@ -38,6 +38,13 @@ function stateOf(code) {
     const prevClose = seed.base;
     // 시작 등락률을 -3% ~ +3% 사이에서 랜덤 부여
     const price = snap(prevClose * (1 + (Math.random() - 0.5) * 0.06));
+    const volume = Math.floor(200_000 + Math.random() * 9_000_000);
+    // 체결강도는 '매수체결 누계 ÷ 매도체결 누계' 입니다. 매 스텝 랜덤값을
+    // 뽑으면 실제와 성질이 달라져 UI 검증에 쓸 수 없습니다 — 실제 값은
+    // 장 초반 분모가 작아 크게 튀고, 누계가 쌓이면서 안정됩니다.
+    // 그 성질을 재현해야 극단값 처리를 테스트할 수 있습니다.
+    const seedLots = 8 + Math.floor(Math.random() * 12); // 장 초반: 체결 수십 건
+    const lot = Math.max(1, Math.floor(volume / 4_000));
     state.set(code, {
       ...seed,
       prevClose,
@@ -45,7 +52,14 @@ function stateOf(code) {
       open: snap(prevClose * (1 + (Math.random() - 0.5) * 0.02)),
       high: price,
       low: price,
-      volume: Math.floor(200_000 + Math.random() * 9_000_000),
+      volume,
+      lot,
+      // 좌우를 비대칭으로 흔들어 둡니다. 정확히 100.00 으로 시작하면
+      // 값이 아직 안 붙은 것처럼 보입니다.
+      buyVol: Math.round(lot * seedLots * (0.4 + Math.random() * 0.25)),
+      sellVol: Math.round(lot * seedLots * (0.4 + Math.random() * 0.25)),
+      steps: 0,
+      startedAt: Date.now(),
     });
   }
   return state.get(code);
@@ -72,8 +86,26 @@ function step(s) {
 
   s.high = Math.max(s.high, s.price);
   s.low = Math.min(s.low, s.price);
-  s.volume += Math.floor(Math.random() * 4_000);
+
+  // 체결을 매수/매도로 갈라 누적합니다. 부호는 이번 스텝의 가격 방향을
+  // 따릅니다 — 그래야 체결강도와 가격이 완전히 무상관이 되지 않습니다.
+  const traded = Math.floor(Math.random() * 4_000);
+  const buyShare = noise > 0 ? 0.5 + Math.random() * 0.35 : 0.15 + Math.random() * 0.35;
+  const buys = Math.floor(traded * buyShare);
+  s.buyVol += buys;
+  s.sellVol += traded - buys;
+  s.volume += traded;
+  s.steps += 1;
   return s;
+}
+
+/**
+ * 체결강도 = 매수체결 누계 ÷ 매도체결 누계 × 100.
+ * 분모가 0이면 값이 존재하지 않습니다 (null → 화면에 '—').
+ */
+function strengthOf(s) {
+  if (!s.sellVol) return null;
+  return Number(((s.buyVol / s.sellVol) * 100).toFixed(2));
 }
 
 function toQuote(s) {
@@ -92,6 +124,9 @@ function toQuote(s) {
     lowerLimit: snap(s.prevClose * 0.7),
     marketCap: null,
     per: null,
+    // startDemoFeed 가 toQuote 를 그대로 펼쳐 보내므로, 여기에 넣으면
+    // 실시간 trade 이벤트에도 자동으로 실립니다.
+    strength: strengthOf(s),
   };
 }
 
@@ -177,6 +212,137 @@ export function demoCandles(code, type, countOverride) {
   }
 
   return candles;
+}
+
+/* ── 체결강도 ─────────────────────────────────────────────── */
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+export function demoStrength(code) {
+  const s = stateOf(code);
+  return {
+    code,
+    strength: strengthOf(s),
+    buyVolume: s.buyVol,
+    sellVolume: s.sellVol,
+    // 누계 체결 건수가 적으면 분모가 작아 값이 크게 튑니다.
+    // UI 가 이 플래그를 보고 '표본 부족' 을 알립니다.
+    thin: s.buyVol + s.sellVol < s.lot * 40,
+  };
+}
+
+/**
+ * 시간별 체결강도 추이.
+ * 09:00 부터 현재까지 10분 간격. 장 초반은 크게 튀고 점차 100 근처로 수렴합니다.
+ */
+export function demoStrengthTrend(code, slots = 40) {
+  const s = stateOf(code);
+  const rows = [];
+  let buy = s.lot * 5;
+  let sell = s.lot * 5;
+
+  for (let i = 0; i < slots; i += 1) {
+    const minutes = i * 10;
+    const hh = 9 + Math.floor(minutes / 60);
+    const mm = minutes % 60;
+    if (hh > 15 || (hh === 15 && mm > 30)) break;
+
+    const traded = s.lot * (6 + Math.floor(Math.random() * 10));
+    const share = 0.35 + Math.random() * 0.3;
+    buy += Math.floor(traded * share);
+    sell += traded - Math.floor(traded * share);
+
+    rows.push({
+      time: `${pad2(hh)}:${pad2(mm)}`,
+      strength: Number(((buy / sell) * 100).toFixed(2)),
+      volume: buy + sell,
+    });
+  }
+  return rows;
+}
+
+/* ── 프로그램 매매 ────────────────────────────────────────── */
+
+const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+/**
+ * 종목별 프로그램 순매수 (일자별).
+ *
+ * 실제 데이터의 두 가지 성질을 재현합니다.
+ *   1) 부호가 의미의 전부입니다 — 순매수와 순매도가 섞여 나옵니다
+ *   2) 오늘 자료는 미집계일 수 있습니다 (장중·휴장일)
+ * DEMO_FLOW_EMPTY=true 로 켜면 2번 상태를 강제해 빈 응답 처리를 볼 수 있습니다.
+ */
+export function demoProgram(code, days = 10) {
+  const s = stateOf(code);
+  const rows = [];
+  const cursor = new Date();
+
+  for (let i = 0; i < days * 2 && rows.length < days; i += 1) {
+    const at = new Date(cursor);
+    at.setDate(at.getDate() - i);
+    if (at.getDay() === 0 || at.getDay() === 6) continue;
+
+    // 순매수 수량은 당일 거래량의 -8% ~ +8% 수준
+    const netQty = Math.round(s.volume * (Math.random() - 0.5) * 0.16);
+    /* 실제 TR(ka90013)이 주는 모양에 맞춥니다 — 매수·매도를 따로 주고
+       순매수가 그 차이입니다. 데모가 응답 모양을 흉내내지 않으면
+       화면을 데모로 검증한 의미가 없어집니다. */
+    const halfTurnover = Math.round(s.volume * (0.18 + Math.random() * 0.12));
+    const buyQty = halfTurnover + Math.max(0, netQty);
+    const sellQty = halfTurnover + Math.max(0, -netQty);
+
+    rows.push({
+      date: ymd(at),
+      netQty,
+      netAmount: netQty * s.price,
+      netAmountRaw: netQty * s.price,
+      netSource: 'field',
+      buyQty,
+      sellQty,
+      buyAmount: buyQty * s.price,
+      sellAmount: sellQty * s.price,
+      // ka90013 은 차익/비차익을 주지 않습니다. 데모도 null 로 두어
+      // 화면에서 그 줄이 숨는 것을 확인할 수 있게 합니다.
+      arbitrageNetQty: null,
+      nonArbitrageNetQty: null,
+      totalVolume: s.volume,
+      price: s.price,
+    });
+  }
+
+  rows.reverse(); // 과거 → 최신
+
+  // 오늘분 미집계 재현
+  const today = ymd(new Date());
+  const hasToday = rows.some((r) => r.date === today);
+  return {
+    code,
+    rows,
+    asOf: rows.at(-1)?.date ?? null,
+    lastValuedDate: rows.filter((r) => r.netQty !== null).at(-1)?.date ?? null,
+    todayPending: false,
+    // '0' 과 '미집계' 는 완전히 다릅니다. 0 으로 채우면 사용자는 중립으로 읽습니다.
+    pending: !hasToday,
+  };
+}
+
+/** 시장 전체(코스피/코스닥) 프로그램 순매수 시간별. */
+export function demoProgramMarket(market = '001', slots = 40) {
+  const rows = [];
+  const base = market === '101' ? 4_000 : 20_000; // 코스닥은 규모가 작습니다
+  let cum = 0;
+
+  for (let i = 0; i < slots; i += 1) {
+    const minutes = i * 10;
+    const hh = 9 + Math.floor(minutes / 60);
+    const mm = minutes % 60;
+    if (hh > 15 || (hh === 15 && mm > 30)) break;
+
+    cum += Math.round((Math.random() - 0.48) * base * 1_000_000);
+    rows.push({ time: `${pad2(hh)}:${pad2(mm)}`, netAmount: cum });
+  }
+  return { market, rows, asOf: ymd(new Date()), pending: rows.length === 0 };
 }
 
 export function demoRank(kind) {

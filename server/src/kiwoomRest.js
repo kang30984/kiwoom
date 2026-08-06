@@ -88,15 +88,99 @@ export function normalizeCode(raw) {
  */
 export function num(v) {
   if (v === null || v === undefined || v === '') return null;
-  const cleaned = String(v).replace(/,/g, '').trim();
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
+  let s = String(v).replace(/,/g, '').trim();
+  if (s === '') return null;
+
+  /**
+   * **부호가 두 번 붙는 경우가 있습니다.**
+   * 키움이 등락 방향 부호 문자를 앞에 덧붙이는데, 값 자체가 이미 음수면
+   * 이렇게 옵니다 (ka90013 종목일별 프로그램매매에서 실제 확인).
+   *
+   *   prm_buy_qty     5469274
+   *   prm_sell_qty    5833738
+   *   prm_netprps_qty "--364464"   ← '-' + '-364464' = -364,464
+   *
+   * 예전에는 Number('--364464') 가 NaN 이라 null 을 돌려줬습니다.
+   * 프로그램 순매수에서 이게 치명적이었습니다 — **순매도인 날이 통째로
+   * 사라져서** 20거래일이 전부 순매수인 것처럼 보였습니다.
+   *
+   * 부호 뭉치에 '-' 가 하나라도 있으면 음수로 봅니다.
+   * 홀짝으로 세면 안 됩니다 ('--364464' 는 마이너스 두 개지만 음수입니다).
+   */
+  let negative = false;
+  const m = /^([+-]+)(.*)$/.exec(s);
+  if (m) {
+    negative = m[1].includes('-');
+    s = m[2];
+  }
+  if (s === '') return null;
+
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+
+  const signed = negative ? -Math.abs(n) : n;
+  // -0 을 0 으로 정규화합니다. Object.is(-0, 0) 이 false 라 비교가 어긋납니다.
+  return signed === 0 ? 0 : signed;
 }
 
 /** 호가 잔량 등은 부호 없는 절대값이 필요할 때가 있습니다. */
 export function abs(v) {
   const n = num(v);
   return n === null ? null : Math.abs(n);
+}
+
+/**
+ * 순매수처럼 **부호가 의미의 전부인** 필드.
+ *
+ * 동작은 num() 과 같습니다. 이름을 따로 둔 이유는 실수를 막기 위해서입니다 —
+ * 이 저장소는 가격·잔량에 Math.abs(num(...)) 패턴을 광범위하게 쓰는데,
+ * 그걸 습관적으로 복사하면 순매도 -1,200억이 +1,200억으로 표시됩니다.
+ * 화면에 그럴듯한 숫자가 나오므로 조용히 통과하는 종류의 버그입니다.
+ * 순매수·순매도 계열에는 abs() 를 절대 쓰지 마세요.
+ */
+export const net = (v) => num(v);
+
+/**
+ * 후보 키를 순서대로 시도하고, 없으면 정규식으로 훑습니다.
+ *
+ * firstArray() 와 같은 이유로 필요합니다 — 프로그램매매·체결강도 TR 의
+ * 필드명을 문서 없이 확정할 수 없고, 개정으로 바뀌기도 합니다.
+ * 하나라도 맞으면 화면이 뜨고, 다 틀리면 null 이라 '미집계'로 표시됩니다.
+ *
+ * @param {object} row
+ * @param {string[]} keys      우선 시도할 정확한 키 이름
+ * @param {RegExp} [pattern]   못 찾았을 때 키 이름을 훑을 정규식
+ * @param {(v:any)=>number|null} [parse] 기본 net (부호 유지)
+ */
+export function pickNum(row, keys, pattern, parse = net) {
+  for (const key of keys) {
+    if (row?.[key] !== undefined && row[key] !== '') {
+      const v = parse(row[key]);
+      if (v !== null) return v;
+    }
+  }
+  if (pattern) {
+    for (const [key, raw] of Object.entries(row ?? {})) {
+      if (!pattern.test(key)) continue;
+      const v = parse(raw);
+      if (v !== null) return v;
+    }
+  }
+  return null;
+}
+
+/** 문자열 필드용 pickNum. 시간·일자 키가 TR 마다 다릅니다. */
+export function pickStr(row, keys, pattern) {
+  for (const key of keys) {
+    const v = row?.[key];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+  }
+  if (pattern) {
+    for (const [key, raw] of Object.entries(row ?? {})) {
+      if (pattern.test(key) && String(raw ?? '').trim() !== '') return String(raw).trim();
+    }
+  }
+  return null;
 }
 
 /**
